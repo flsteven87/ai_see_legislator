@@ -8,7 +8,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
 
-        for i in range(1, 39):
+        for i in range(1, 44):
             # 如果 i 為個位數，則在前面補 0
             if i < 10:
                 i = f'0{i}'
@@ -27,7 +27,8 @@ class Command(BaseCommand):
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, 'html.parser')
-            links = soup.find_all('a', title="doc下載(另開視窗)")
+            # links = soup.find_all('a', title="doc下載(另開視窗)")
+            links = soup.find_all('a', title="pdf下載(另開視窗)")
 
             for link in links:
                 file_url = link.get('href')
@@ -43,3 +44,5 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.ERROR(f'Failed to scrape {url}'))
             self.stdout.write(self.style.ERROR(f'Status code: {response.status_code}'))                          
+
+# python manage.py gazette
