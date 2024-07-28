@@ -162,6 +162,5 @@ cython_debug/
 .DS_Store
 
 # Data
-backend/graphrag/input/*
-backend/graphrag/output/*
-backend/graphrag/cache
+backend/data/pdf/*
+backend/data/txt/*
