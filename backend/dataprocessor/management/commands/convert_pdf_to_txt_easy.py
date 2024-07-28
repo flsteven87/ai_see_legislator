@@ -1,17 +1,17 @@
-# dataprocessor/management/commands/convert_pdf_to_txt.py
+# dataprocessor/management/commands/convert_pdf_to_txt_easy.py
 
 from django.core.management.base import BaseCommand
 from django.conf import settings
 import os
-import marker
+from pdfminer.high_level import extract_text
 import logging
 
 class Command(BaseCommand):
-    help = 'Convert PDF files to TXT in the data/pdf folder and its subfolders'
+    help = 'Convert PDF files to TXT in the backend/data/pdf folder and its subfolders'
 
     def handle(self, *args, **options):
-        input_dir = settings.MEDIA_ROOT
-        output_base_dir = os.path.join(settings.BASE_DIR, 'backend', 'data', 'txt')
+        input_dir = os.path.join(settings.BASE_DIR, 'data', 'pdf')
+        output_base_dir = os.path.join(settings.BASE_DIR, 'data', 'txt')
 
         logging.basicConfig(level=logging.INFO)
         logger = logging.getLogger(__name__)
@@ -38,17 +38,11 @@ class Command(BaseCommand):
                         continue
 
                     try:
-                        # 使用 Marker 的 Python 接口進行 PDF 到 TXT 的轉換
-                        text = self.convert_pdf_to_txt(pdf_path)
+                        text = extract_text(pdf_path)
                         with open(txt_path, 'w', encoding='utf-8') as txt_file:
                             txt_file.write(text)
                         logger.info(f"Converted {pdf_path} to {txt_path}")
                     except Exception as e:
                         logger.error(f"Error converting {pdf_path}: {str(e)}")
 
-    def convert_pdf_to_txt(self, pdf_path):
-        # 使用 marker 進行 PDF 到 Markdown 的轉換
-        markdown_text = marker.convert_single_pdf(pdf_path)
-        return markdown_text
-
-# 使用方法：python manage.py convert_pdf_to_txt
+# 使用方法：python manage.py convert_pdf_to_txt_easy

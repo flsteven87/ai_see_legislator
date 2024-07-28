@@ -1,51 +1,17 @@
 import openai
 from dotenv import load_dotenv
 import os
-from openai import AssistantEventHandler
-from typing_extensions import override
 import json
-
-class EventHandler(AssistantEventHandler):
-    @override
-    def on_event(self, event):
-      # Retrieve events that are denoted with 'requires_action'
-      # since these will have our tool_calls
-      if event.event == 'thread.run.requires_action':
-        run_id = event.data.id  # Retrieve the run ID from the event data
-        self.handle_requires_action(event.data, run_id)
- 
-    def handle_requires_action(self, data, run_id):
-      tool_outputs = []
-        
-      for tool in data.required_action.submit_tool_outputs.tool_calls:
-        if tool.function.name == "get_current_temperature":
-          tool_outputs.append({"tool_call_id": tool.id, "output": "57"})
-        elif tool.function.name == "get_rain_probability":
-          tool_outputs.append({"tool_call_id": tool.id, "output": "0.06"})
-        
-      # Submit all tool_outputs at the same time
-      self.submit_tool_outputs(tool_outputs, run_id)
- 
-    def submit_tool_outputs(self, tool_outputs, run_id):
-      # Use the submit_tool_outputs_stream helper
-      with openai.OpenAI().beta.threads.runs.submit_tool_outputs_stream(
-        thread_id=self.current_run.thread_id,
-        run_id=self.current_run.id,
-        tool_outputs=tool_outputs,
-        event_handler=EventHandler(),
-      ) as stream:
-        for text in stream.text_deltas:
-          print(text, end="", flush=True)
-        print()
+import asyncio
+import requests
 
 class AssistantAPI:
     def __init__(self):
         load_dotenv()
         openai.api_key = os.environ.get('OPENAI_API_KEY')
         self.client = openai.OpenAI()
-        self.gazette_assistant_id = os.environ.get('gazette_assistant_id')
+        self.gazette_assistant_id = 'asst_Cu1eA3qYvbe1vTUMU34Ldlph'
         self.gazette_vector_stores_id = os.environ.get('gazette_vector_stores_id')
-        self.file_id = 'file-rIxi4Fh5wM60MM8U8PaqryYL'
 
     def create_assistant(self, name, instructions, tools, model):
         assistant = self.client.beta.assistants.create(
@@ -68,6 +34,10 @@ class AssistantAPI:
         )
         return file_batch
 
+    def list_files_in_vector_store(self, vector_store_id):
+        files = self.client.beta.vector_stores.files.list(vector_store_id=vector_store_id)
+        return files
+
     def link_vector_store(self, vector_store_id):
         assistant = self.client.beta.assistants.update(
             assistant_id=self.gazette_assistant_id,
@@ -75,7 +45,6 @@ class AssistantAPI:
         )
 
     def init_assistant(self):
-
         extract_basic_information ={
             "type": "function",
             "function": {
@@ -113,7 +82,7 @@ class AssistantAPI:
             name="台灣立法院公報解析",
             instructions="你是一位資深的立法院公報分析師，你的任務是分析臺灣立法院公報，並以繁體中文提供相關的資訊。",
             tools=[{"type": "file_search"}, extract_basic_information],
-            model="gpt-4o",
+            model="gpt-4o-mini",
         )
 
         self.gazette_assistant_id = assistant.id
@@ -123,14 +92,11 @@ class AssistantAPI:
         if edition_index < 10:
             edition_index = f'0{edition_index}'
 
-        # create vector store & upload files & link vector store
         vector_store = self.create_vector_store(
             name=f"立法院公報第{edition_index}期",
         )
 
-        # file_paths 為./backend/media/第{edition_index}期/ 底下的所有 pdf 檔案路徑
-
-        file_paths = [os.path.join(f'./media/第{edition_index}期/', file) for file in os.listdir(f'./media/第{edition_index}期/') if file.endswith('.pdf')]
+        file_paths = [os.path.join(f'./data/txt/第{edition_index}期/', file) for file in os.listdir(f'./data/txt/第{edition_index}期/') if file.endswith('.txt')]
 
         file_streams = [open(path, "rb") for path in file_paths]
         file_batch = self.upload_file(vector_store.id, file_streams)
@@ -139,76 +105,130 @@ class AssistantAPI:
 
         self.link_vector_store(vector_store.id)
 
+        # 列出文件並選擇第一個文件的 ID
+        files = self.list_files_in_vector_store(vector_store.id)
+        if files:
+            first_file_id = files[0].id
+            return first_file_id
+        else:
+            print("沒有文件被上傳")
+            return None
+
     def create_thread(self, messages):
         thread = self.client.beta.threads.create(
             messages=messages, 
-            )
+        )
         self.thread_id = thread.id
         return thread
 
-    def run_streaming_thread(self, thread_id, assistant_id, instructions):
-        with self.client.beta.threads.runs.stream(
-            thread_id=thread_id,
-            assistant_id=assistant_id,
-            instructions=instructions,
-            event_handler=EventHandler(),
-        ) as stream:
-            stream.until_done()
-
-    def run_thread(self, thread_id, assistant_id, instructions):
-        
+    async def run_thread(self, thread_id, assistant_id, instructions):
         run = self.client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=assistant_id,
             instructions=instructions,
         )
-        
-        # Poll the run status
-        while run.status != 'completed':
+
+        run_complete = False
+        while not run_complete:
             run = self.client.beta.threads.runs.poll(
                 thread_id=thread_id,
                 run_id=run.id,
             )
             print(f"Run status: {run.status}")
 
-            if run.required_action.submit_tool_outputs.tool_calls:
-                for tool in run.required_action.submit_tool_outputs.tool_calls:
-                    function_args = json.loads(tool.function.arguments)
+            if run.status == "requires_action":
+                for tool_call in run.required_action.submit_tool_outputs.tool_calls:
+                    function_args = json.loads(tool_call.function.arguments)
                     meeting_time = function_args.get("meeting_time")
-                    meeting_type = function_args.get("meeting_type")                  
+                    meeting_type = function_args.get("meeting_type")
                     meeting_location = function_args.get("meeting_location")
                     attendees = function_args.get("attendees")
                     print(f"Meeting time: {meeting_time}")
                     print(f"Meeting location: {meeting_location}")
                     print(f"Attendees: {attendees}")
                     print(f"Meeting type: {meeting_type}")
-            
+
+                    result = self.extract_basic_information(
+                        meeting_time=meeting_time,
+                        meeting_type=meeting_type,
+                        meeting_location=meeting_location,
+                        attendees=attendees
+                    )
+
+                    await self.client.beta.threads.runs.submitToolOutputs(
+                        thread_id=thread_id,
+                        run_id=run.id,
+                        tool_outputs=[{'tool_call_id': tool_call.id, 'output': result}]
+                    )
+            run_complete = run.status in ["completed", "failed"]
+        print("Run complete")
+
+        headers = {
+            'Authorization': f'Bearer {os.environ.get("OPENAI_API_KEY")}',
+            'OpenAI-Beta': 'assistants=v2',
+        }
+        response = requests.get(
+            f'https://api.openai.com/v1/threads/{thread_id}/messages',
+            headers=headers
+        )
+
+        if response.status_code == 200:
+            messages = response.json()["data"]
+            for message in messages:
+                message_info = self.extract_message_info(message)
+                print(json.dumps(message_info, indent=2, ensure_ascii=False))
+        else:
+            print(f"Failed to retrieve messages: {response.status_code}, {response.text}")
+
+    def extract_basic_information(self, meeting_time, meeting_type, meeting_location, attendees):
+        return f"會議時間: {meeting_time}, 會議類型: {meeting_type}, 會議地點: {meeting_location}, 參加者: {', '.join(attendees)}"
+
+    def extract_message_info(self, message):
+        message_info = {
+            "id": message["id"],
+            "created_at": message["created_at"],
+            "thread_id": message["thread_id"],
+            "role": message["role"],
+            "content": self.parse_content(message["content"]),
+            "attachments": message["attachments"],
+            "metadata": message["metadata"]
+        }
+        return message_info
+
+    def parse_content(self, content):
+        parsed_content = []
+        for item in content:
+            if item["type"] == "text":
+                decoded_text = json.loads(f'"{item["text"]["value"]}"')
+                parsed_content.append(decoded_text)
+            elif item["type"] == "markdown":
+                decoded_text = json.loads(f'"{item["markdown"]["value"]}"')
+                parsed_content.append(decoded_text)
+            # Handle other content types if necessary
+        return "\n".join(parsed_content)
 
 if __name__ == "__main__":
 
+    edition = 67
     assistant_api = AssistantAPI()
-    # assistant_api.init_assistant()
-    # assistant_api.new_edition_gazette(42)
+    first_file_id = assistant_api.new_edition_gazette(edition)
 
-    messages=[
-        {
-            "role": "user",
-            "content": "你是一位熟悉台灣立法院運作的分析師，附檔是一份公報", # 整個thread的instructions
-            # Attach the new file to the message.
-            "attachments": [
-                { "file_id": assistant_api.file_id, "tools": [{"type": "file_search"}, ] }
-            ],
-        }
-    ]
+    if first_file_id:
+        messages = [
+            {
+                "role": "user",
+                "content": f"你是一位熟悉台灣立法院運作的分析師，附檔第{edition}期的公報",
+                "attachments": [
+                    { "file_id": first_file_id, "tools": [{"type": "file_search"}, ] }
+                ],
+            }
+        ]
 
-    thread = assistant_api.create_thread(messages)
-    
-    # The thread now has a vector store with that file in its tool resources.
-    print(thread.tool_resources.file_search)
-    print(thread.id)
+        thread = assistant_api.create_thread(messages)
 
-    thread_id = thread.id
-    instructions = "請你將這份公報的基本資訊提取出來。"
+        print(thread.tool_resources.file_search)
+        print(thread.id)
+        thread_id = thread.id
+        instructions = "請問這是什麼類型的會議？"
 
-    # assistant_api.run_streaming_thread(thread_id=thread_id, assistant_id=assistant_api.gazette_assistant_id, instructions=instructions)
-    run = assistant_api.run_thread(thread_id=thread_id, assistant_id=assistant_api.gazette_assistant_id, instructions=instructions)
+        asyncio.run(assistant_api.run_thread(thread_id=thread_id, assistant_id=assistant_api.gazette_assistant_id, instructions=instructions))

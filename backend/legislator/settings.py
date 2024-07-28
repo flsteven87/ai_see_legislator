@@ -130,5 +130,5 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 import os
 
-MEDIA_ROOT = os.path.join(BASE_DIR, 'graphrag/input/media/')
-MEDIA_URL = 'graphrag/input/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'data/pdf/')
+MEDIA_URL = 'data/pdf/'
