@@ -36,7 +36,10 @@ class AssistantAPI:
 
     def list_files_in_vector_store(self, vector_store_id):
         files = self.client.beta.vector_stores.files.list(vector_store_id=vector_store_id)
-        return files
+        file_list = []
+        for file in files:
+            file_list.append(file)
+        return file_list
 
     def link_vector_store(self, vector_store_id):
         assistant = self.client.beta.assistants.update(
@@ -199,17 +202,23 @@ class AssistantAPI:
         parsed_content = []
         for item in content:
             if item["type"] == "text":
-                decoded_text = json.loads(f'"{item["text"]["value"]}"')
+                try:
+                    decoded_text = json.loads(f'"{item["text"]["value"]}"')
+                except json.JSONDecodeError:
+                    decoded_text = item["text"]["value"]
                 parsed_content.append(decoded_text)
             elif item["type"] == "markdown":
-                decoded_text = json.loads(f'"{item["markdown"]["value"]}"')
+                try:
+                    decoded_text = json.loads(f'"{item["markdown"]["value"]}"')
+                except json.JSONDecodeError:
+                    decoded_text = item["markdown"]["value"]
                 parsed_content.append(decoded_text)
             # Handle other content types if necessary
         return "\n".join(parsed_content)
 
 if __name__ == "__main__":
 
-    edition = 67
+    edition = 68
     assistant_api = AssistantAPI()
     first_file_id = assistant_api.new_edition_gazette(edition)
 
@@ -228,7 +237,8 @@ if __name__ == "__main__":
 
         print(thread.tool_resources.file_search)
         print(thread.id)
+
         thread_id = thread.id
-        instructions = "請問這是什麼類型的會議？"
+        instructions = "請問總共有幾份會議紀錄？"
 
         asyncio.run(assistant_api.run_thread(thread_id=thread_id, assistant_id=assistant_api.gazette_assistant_id, instructions=instructions))

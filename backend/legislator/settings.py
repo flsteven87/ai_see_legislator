@@ -11,10 +11,15 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 """
 
 from pathlib import Path
+from dotenv import load_dotenv
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+ENV_FILE = BASE_DIR / '.env'
 
+# Load .env file
+load_dotenv(ENV_FILE)
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
@@ -128,7 +133,15 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-import os
+# Google API credentials
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
+GOOGLE_PROJECT_ID = os.getenv('GOOGLE_PROJECT_ID')
+GOOGLE_AUTH_URI = os.getenv('GOOGLE_AUTH_URI')
+GOOGLE_TOKEN_URI = os.getenv('GOOGLE_TOKEN_URI')
+GOOGLE_AUTH_PROVIDER_X509_CERT_URL = os.getenv('GOOGLE_AUTH_PROVIDER_X509_CERT_URL')
+GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
+GOOGLE_REDIRECT_URI = 'http://localhost:8080/'
 
+# Media files
 MEDIA_ROOT = os.path.join(BASE_DIR, 'data/pdf/')
 MEDIA_URL = 'data/pdf/'

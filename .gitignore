@@ -163,4 +163,5 @@ cython_debug/
 
 # Data
 backend/data/pdf/*
-backend/data/txt/*
+credentials.json
+token.json
